@@ -1,7 +1,21 @@
 import React, { useEffect, useState } from 'react';
 import { getSubjects, createSubject, updateSubject, deleteSubject } from '../api';
 
-const EMPTY_FORM = { subject_code: '', name: '', units: 3, description: '' };
+const EMPTY_FORM = { subject_code: '', name: '', units: 3, subject_type: 'lecture', description: '', prerequisite: '' };
+
+const TYPE_COLORS = {
+  lecture: 'badge-blue',
+  lab: 'badge-purple',
+  pe: 'badge-green',
+  nstp: 'badge-yellow',
+};
+
+const TYPE_LABELS = {
+  lecture: 'Lecture',
+  lab: 'Laboratory',
+  pe: 'PE',
+  nstp: 'NSTP',
+};
 
 export default function Subjects() {
   const [subjects, setSubjects] = useState([]);
@@ -12,16 +26,23 @@ export default function Subjects() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [saving, setSaving] = useState(false);
+  const [filterType, setFilterType] = useState('');
 
-  const load = () => {
+  const load = (typeFilter = filterType) => {
     setLoading(true);
-    getSubjects()
+    const params = typeFilter ? { type: typeFilter } : {};
+    getSubjects(params)
       .then(res => setSubjects(res.data))
       .catch(() => setError('Failed to load subjects.'))
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, []); // eslint-disable-line
+
+  const handleTypeFilter = (val) => {
+    setFilterType(val);
+    load(val);
+  };
 
   const openCreate = () => {
     setEditing(null); setForm(EMPTY_FORM); setError(''); setShowModal(true);
@@ -29,19 +50,26 @@ export default function Subjects() {
 
   const openEdit = (s) => {
     setEditing(s);
-    setForm({ subject_code: s.subject_code, name: s.name, units: s.units, description: s.description || '' });
+    setForm({
+      subject_code: s.subject_code, name: s.name, units: s.units,
+      subject_type: s.subject_type || 'lecture',
+      description: s.description || '',
+      prerequisite: s.prerequisite || '',
+    });
     setError(''); setShowModal(true);
   };
 
   const handleSubmit = async () => {
     if (!form.subject_code || !form.name) { setError('Subject code and name are required.'); return; }
     setSaving(true); setError('');
+    const payload = { ...form };
+    if (!payload.prerequisite) delete payload.prerequisite;
     try {
       if (editing) {
-        await updateSubject(editing.id, form);
+        await updateSubject(editing.id, payload);
         setSuccess('Subject updated.');
       } else {
-        await createSubject(form);
+        await createSubject(payload);
         setSuccess('Subject added.');
       }
       setShowModal(false); load();
@@ -61,6 +89,8 @@ export default function Subjects() {
     } catch { setError('Failed to delete subject.'); }
   };
 
+  const typeButtons = ['', 'lecture', 'lab', 'pe', 'nstp'];
+
   return (
     <div>
       <div className="page-header">
@@ -74,6 +104,19 @@ export default function Subjects() {
       {success && <div className="alert alert-success">✓ {success}</div>}
       {error && !showModal && <div className="alert alert-error">⚠ {error}</div>}
 
+      {/* Type Filter Tabs */}
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap' }}>
+        {typeButtons.map(t => (
+          <button
+            key={t}
+            className={`btn btn-sm ${filterType === t ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => handleTypeFilter(t)}
+          >
+            {t === '' ? 'All Types' : TYPE_LABELS[t]}
+          </button>
+        ))}
+      </div>
+
       {loading ? (
         <div className="loading"><div className="spinner" /> Loading subjects...</div>
       ) : (
@@ -86,7 +129,7 @@ export default function Subjects() {
             {subjects.length === 0 ? (
               <div className="empty-state">
                 <div className="empty-icon">◉</div>
-                <div className="empty-text">No subjects yet. Add one to get started.</div>
+                <div className="empty-text">No subjects found.</div>
               </div>
             ) : (
               <table>
@@ -94,9 +137,10 @@ export default function Subjects() {
                   <tr>
                     <th>Code</th>
                     <th>Subject Name</th>
+                    <th>Type</th>
                     <th>Units</th>
                     <th>Sections</th>
-                    <th>Description</th>
+                    <th>Prerequisite</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
@@ -104,11 +148,25 @@ export default function Subjects() {
                   {subjects.map(s => (
                     <tr key={s.id}>
                       <td><span className="badge badge-purple">{s.subject_code}</span></td>
-                      <td>{s.name}</td>
+                      <td>
+                        <div>{s.name}</div>
+                        {s.description && (
+                          <div style={{ fontSize: '11px', color: 'var(--text3)', marginTop: '2px' }}>
+                            {s.description.length > 50 ? s.description.slice(0, 50) + '…' : s.description}
+                          </div>
+                        )}
+                      </td>
+                      <td>
+                        <span className={`badge ${TYPE_COLORS[s.subject_type] || 'badge-blue'}`}>
+                          {TYPE_LABELS[s.subject_type] || s.subject_type}
+                        </span>
+                      </td>
                       <td><span className="badge badge-blue">{s.units} units</span></td>
                       <td><span className="badge badge-green">{s.total_sections} sections</span></td>
-                      <td style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {s.description || <span style={{ color: 'var(--text3)' }}>—</span>}
+                      <td>
+                        {s.prerequisite_details
+                          ? <span className="badge badge-yellow">{s.prerequisite_details?.subject_code}</span>
+                          : <span style={{ color: 'var(--text3)' }}>None</span>}
                       </td>
                       <td>
                         <div className="td-actions">
@@ -150,6 +208,28 @@ export default function Subjects() {
                 <label className="form-label">Subject Name</label>
                 <input className="form-input" placeholder="e.g. Introduction to Computing"
                   value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label className="form-label">Type</label>
+                  <select className="form-select" value={form.subject_type}
+                    onChange={e => setForm({ ...form, subject_type: e.target.value })}>
+                    <option value="lecture">Lecture</option>
+                    <option value="lab">Laboratory</option>
+                    <option value="pe">Physical Education</option>
+                    <option value="nstp">NSTP</option>
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Prerequisite (optional)</label>
+                  <select className="form-select" value={form.prerequisite}
+                    onChange={e => setForm({ ...form, prerequisite: e.target.value })}>
+                    <option value="">None</option>
+                    {subjects.filter(s => !editing || s.id !== editing.id).map(s => (
+                      <option key={s.id} value={s.id}>{s.subject_code} — {s.name}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
               <div className="form-group">
                 <label className="form-label">Description (optional)</label>
