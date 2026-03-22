@@ -209,7 +209,7 @@ export default function Enrollments() {
                 <select className="form-select" value={form.student}
                   onChange={e => setForm({ ...form, student: e.target.value })}>
                   <option value="">-- Choose Student --</option>
-                  {students.filter(s => s.is_active !== false).map(s => (
+                  {students.map(s => (
                     <option key={s.id} value={s.id}>
                       {s.student_id} — {s.full_name} ({s.year_level_display})
                     </option>
